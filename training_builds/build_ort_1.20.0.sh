@@ -34,7 +34,9 @@ export UV_PYTHON_INSTALL_DIR=/nfs-share/pa511/uv/python
 uv python install 3.11
 uv venv --python 3.11 "$BUILD_ROOT/build_venv"
 source "$BUILD_ROOT/build_venv/bin/activate"
-uv pip install "cmake<4" ninja packaging numpy wheel nvidia-cudnn-cu12==9.2.1.18
+# setuptools isn't preinstalled in a `uv venv` (unlike `python -m venv`, which gets it via
+# ensurepip) -- setup.py's own `from setuptools import ...` needs it explicitly.
+uv pip install "cmake<4" ninja packaging numpy wheel setuptools nvidia-cudnn-cu12==9.2.1.18
 
 CUDNN_HOME="$(python3 -c "import nvidia.cudnn, os; print(os.path.dirname(nvidia.cudnn.__file__))")"
 echo "CUDNN_HOME resolved to: $CUDNN_HOME"
