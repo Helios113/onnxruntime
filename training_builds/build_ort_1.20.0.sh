@@ -40,11 +40,13 @@ if [ ! -e "$CUDNN_HOME/lib/libcudnn.so" ]; then
   ln -s libcudnn.so.9 "$CUDNN_HOME/lib/libcudnn.so"
 fi
 
-echo "=== cloning onnxruntime (v1.20.0) ==="
-if [ ! -d onnxruntime ]; then
-  git clone --recursive --branch v1.20.0 --depth 1 https://github.com/microsoft/onnxruntime.git
-fi
-cd onnxruntime
+echo "=== using onnxruntime worktree (training/rel-1.20.0) ==="
+# Build a dedicated worktree of the training/rel-1.20.0 branch (not the primary checkout
+# at /nfs-share/pa511/code_bases/onnxruntime) so this build can run without holding that
+# checkout busy -- it stays free for other work (e.g. branch cleanup) while this runs.
+ORT_SRC=/nfs-share/pa511/code_bases/onnxruntime_worktrees/training-rel-1.20.0
+cd "$ORT_SRC"
+git submodule update --init --recursive
 
 # Same eigen SHA1-mismatch workaround as 1.19.2 -- the pin (commit e7248b2) is unchanged
 # in cmake/deps.txt between v1.19.2 and v1.20.0, confirmed via `git diff v1.19.2 v1.20.0 --
