@@ -1,7 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-BUILD_ROOT=/local/scratch/pa511_ort_build_1.20.0
+# On NFS (not /local/scratch) so the staged build output -- setup.py plus the assembled
+# onnxruntime/ python package tree with the compiled .so -- is visible from any node for
+# editable installs (see pyproject.toml's [tool.uv.sources] in dependent repos), not just
+# from ruapehu where the build actually runs.
+BUILD_ROOT=/nfs-share/pa511/code_bases/onnxruntime_build_output/1.20.0
 mkdir -p "$BUILD_ROOT"
 cd "$BUILD_ROOT"
 
