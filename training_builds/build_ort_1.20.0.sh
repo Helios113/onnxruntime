@@ -7,7 +7,9 @@ cd "$BUILD_ROOT"
 
 export CUDA_HOME=/usr/local/cuda-12.8
 export CUDACXX=/usr/local/cuda-12.8/bin/nvcc
-export PATH=/usr/local/cuda-12.8/bin:$PATH
+# sbatch runs a non-login shell, so uv's install dir isn't on PATH by default -- add it
+# explicitly rather than relying on the login profile.
+export PATH=/usr/local/cuda-12.8/bin:/nfs-share/pa511/uv/bin:$PATH
 export LD_LIBRARY_PATH=/usr/local/cuda-12.8/targets/x86_64-linux/lib
 
 # See build_ort.sh (1.19.2) -- the login shell's profile sets CPATH/LIBRARY_PATH to
@@ -20,14 +22,15 @@ echo "=== nvcc check ==="
 $CUDACXX --version
 
 echo "=== setting up build venv ==="
-# Same shared-libpython requirement as the 1.19.2 build: CMake's find_package(Python ...)
-# needs libpython3.11.so + Python.h to define Python::Python, which the PATH-resolved
-# python3 shim doesn't provide. Use pyenv's --enable-shared 3.11.9 directly.
-PYENV_PY311=/nfs-share/pa511/.pyenv/versions/3.11.9/bin/python3.11
-"$PYENV_PY311" -m venv "$BUILD_ROOT/build_venv"
+# CMake's find_package(Python ...) needs libpython3.11.so + Python.h to define the
+# Python::Python target -- a plain PATH-resolved python3 shim doesn't provide these.
+# uv's managed CPython builds (python-build-standalone) do ship both, unlike a bare
+# `uv venv` off the system interpreter, so install/use one explicitly.
+export UV_PYTHON_INSTALL_DIR=/nfs-share/pa511/uv/python
+uv python install 3.11
+uv venv --python 3.11 "$BUILD_ROOT/build_venv"
 source "$BUILD_ROOT/build_venv/bin/activate"
-pip install --upgrade pip
-pip install "cmake<4" ninja packaging numpy wheel nvidia-cudnn-cu12==9.2.1.18
+uv pip install "cmake<4" ninja packaging numpy wheel nvidia-cudnn-cu12==9.2.1.18
 
 CUDNN_HOME="$(python3 -c "import nvidia.cudnn, os; print(os.path.dirname(nvidia.cudnn.__file__))")"
 echo "CUDNN_HOME resolved to: $CUDNN_HOME"
