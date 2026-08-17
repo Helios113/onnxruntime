@@ -1254,12 +1254,14 @@ IMPLEMENT_GRADIENT_BUILDER(GetPowGradient) {
   }
 
   std::vector<NodeDef> result;
-  NodeDef one_constant_node = OneConstantNode(IElemType(0));
+  NodeDef one_constant_node = OneConstantNode(IElemType(1));
   ArgDef one_arg = one_constant_node.output_args[0];
   result.push_back(one_constant_node);
   result.push_back(NodeDef("Sub", {I(1), one_arg}, {IA("Sub_I1")}));
   result.push_back(NodeDef("Pow", {I(0), IA("Sub_I1")}, {IA("Pow_I0")}));
-  result.push_back(NodeDef("Mul", {IA("Pow_I0"), I(1)}, {IA("Mul_Pow_I0_I1")}));
+  result.push_back(
+      NodeDef("Cast", {I(1)}, {IA("Casted_I1")}, {MakeAttribute("to", int64_t(IElemType(0)))}));
+  result.push_back(NodeDef("Mul", {IA("Pow_I0"), IA("Casted_I1")}, {IA("Mul_Pow_I0_I1")}));
   result.push_back(NodeDef("Mul", {IA("Mul_Pow_I0_I1"), GO(0)}, {GI(0)}));
   return result;
 }
