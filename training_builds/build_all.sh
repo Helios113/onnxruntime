@@ -13,7 +13,7 @@ set -euo pipefail
 # instead, since the host may eventually have more than one cuda-12.* dir).
 #
 # Usage:
-#   ORT_SRC=/path/to/onnxruntime_worktrees/training-rel-1.20.0 training_builds/build_all.sh
+#   ORT_SRC=/path/to/onnxruntime training_builds/build_all.sh
 #
 # Jobs are submitted sequentially (not run concurrently) since they share the
 # same --nodelist=ruapehu in submit_build.sbatch and would otherwise contend
