@@ -9,7 +9,7 @@
 
 # Generic submit wrapper for build_ort.sh -- set ORT_SRC (required) and optionally
 # BUILD_ROOT/PYTHON_VERSION/CUDA_HOME/etc. as env vars when submitting, e.g.:
-#   ORT_SRC=/nfs-share/pa511/code_bases/onnxruntime_worktrees/training-rel-1.20.0 \
+#   ORT_SRC=/nfs-share/pa511/code_bases/onnxruntime \
 #     sbatch --export=ALL training_builds/submit_build.sbatch
 #
 # --export=ALL on the sbatch invocation (not this file) is what actually forwards
