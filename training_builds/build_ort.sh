@@ -102,7 +102,7 @@ echo "CMAKE_CUDA_ARCHITECTURES=$CMAKE_CUDA_ARCHITECTURES"
 echo "=== setting up build venv (Python $PYTHON_VERSION) ==="
 export UV_PYTHON_INSTALL_DIR="$BUILD_ROOT/uv_python"
 uv python install "$PYTHON_VERSION"
-uv venv --python "$PYTHON_VERSION" "$BUILD_ROOT/build_venv"
+uv venv --clear --python "$PYTHON_VERSION" "$BUILD_ROOT/build_venv"
 source "$BUILD_ROOT/build_venv/bin/activate"
 
 # setuptools isn't preinstalled in a `uv venv` (unlike `python -m venv`, which
