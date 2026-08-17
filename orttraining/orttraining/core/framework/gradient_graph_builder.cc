@@ -297,9 +297,15 @@ Status GradientGraphBuilder::Build(const std::unordered_set<std::string>* p_init
   GraphAugmenter::GraphDefs gradient_graph_defs;
   // add "gradient of the loss" node, always 1.
   if (loss_node_arg_name_ != "") {
-    ONNX_NAMESPACE::TensorProto tensor_proto;
-    tensor_proto.set_data_type(ONNX_NAMESPACE::TensorProto_DataType_FLOAT);
-    tensor_proto.add_float_data(1.f);
+    int32_t loss_elem_type = ONNX_NAMESPACE::TensorProto_DataType_FLOAT;
+    const NodeArg* loss_node_arg = graph_->GetNodeArg(loss_node_arg_name_);
+    const auto* loss_type_proto = loss_node_arg ? loss_node_arg->TypeAsProto() : nullptr;
+    if (loss_type_proto != nullptr && loss_type_proto->value_case() == ONNX_NAMESPACE::TypeProto::kTensorType) {
+      loss_elem_type = loss_type_proto->tensor_type().elem_type();
+    }
+
+    ONNX_NAMESPACE::TensorProto tensor_proto =
+        GradientBuilderBase::ScalarTensorProtoByElemType(1.f, loss_elem_type);
     tensor_proto.set_name(GradientBuilderBase::GradientName(loss_node_arg_name_));
 
     gradient_graph_defs.AddInitializers({tensor_proto});
