@@ -31,9 +31,11 @@ cd "$BUILD_ROOT"
 # CUDA toolkit discovery
 # ---------------------------------------------------------------------------
 if [ -z "${CUDA_HOME:-}" ]; then
-  # Highest-versioned /usr/local/cuda-* install, falling back to the generic
-  # /usr/local/cuda symlink if no versioned dirs exist.
-  CUDA_HOME="$(find /usr/local -maxdepth 1 -name 'cuda-*' -type d 2>/dev/null | sort -V | tail -1)"
+  # Highest-versioned /usr/local/cuda-12.* install (ORT 1.20.0 predates CUDA 13 --
+  # its nvcc rejects GCC-style warning flags CMake's compiler feature-detection
+  # probes with, e.g. "-Wstrict-aliasing", breaking configure). Excluding cuda-13.*
+  # from auto-discovery avoids that; pass CUDA_HOME explicitly to override.
+  CUDA_HOME="$(find /usr/local -maxdepth 1 -name 'cuda-12.*' -type d 2>/dev/null | sort -V | tail -1)"
   CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
 fi
 if [ ! -x "$CUDA_HOME/bin/nvcc" ]; then
