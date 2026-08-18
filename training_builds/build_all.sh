@@ -37,7 +37,6 @@ CUDA_13_1_HOME="${CUDA_13_1_HOME:-/usr/local/cuda-13.1}"
 COMBOS=(
   "3.11:$CUDA_12_8_HOME:py311_cuda12:"
   "3.12:$CUDA_12_8_HOME:py312_cuda12:"
-  "3.12:$CUDA_13_1_HOME:py312_cuda13:75;80;86;90"
 )
 
 for combo in "${COMBOS[@]}"; do

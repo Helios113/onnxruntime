@@ -344,6 +344,13 @@ __device__ __inline__ double _Pow(double a, double b) { return pow(a, b); }
 template <>
 __device__ __inline__ half _Pow(half a, half b) { return half(powf((float)a, (float)b)); }
 
+// BFloat16 has no implicit conversion to double, so the generic template above
+// doesn't apply here; go through float for every exponent type instead.
+template <typename T1>
+__device__ __inline__ BFloat16 _Pow(BFloat16 a, T1 b) {
+  return BFloat16(powf(static_cast<float>(a), static_cast<float>(b)));
+}
+
 #define ISNAN_HALF(v__) static_cast<uint16_t>(*reinterpret_cast<const uint16_t*>(&v__) & ~MLFloat16::kSignMask) \
                             > MLFloat16::kPositiveInfinityBits
 

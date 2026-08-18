@@ -92,9 +92,9 @@ if [ -z "${CMAKE_CUDA_ARCHITECTURES:-}" ]; then
   fi
   if [ -z "${CMAKE_CUDA_ARCHITECTURES:-}" ]; then
     echo "WARNING: no GPU visible on this build host (nvidia-smi missing or empty)." >&2
-    echo "Falling back to a broad arch list (70;75;80;86;90 = V100/T4/A100/A6000/H100)." >&2
+    echo "Falling back to the target fleet's arch list (89;90;120 = RTX 4090/H100/RTX 5090)." >&2
     echo "Set CMAKE_CUDA_ARCHITECTURES explicitly for a different/narrower target." >&2
-    CMAKE_CUDA_ARCHITECTURES="70;75;80;86;90"
+    CMAKE_CUDA_ARCHITECTURES="89;90;120"
   fi
 fi
 echo "CMAKE_CUDA_ARCHITECTURES=$CMAKE_CUDA_ARCHITECTURES"
@@ -102,7 +102,9 @@ echo "CMAKE_CUDA_ARCHITECTURES=$CMAKE_CUDA_ARCHITECTURES"
 echo "=== setting up build venv (Python $PYTHON_VERSION) ==="
 export UV_PYTHON_INSTALL_DIR="$BUILD_ROOT/uv_python"
 uv python install "$PYTHON_VERSION"
-uv venv --clear --python "$PYTHON_VERSION" "$BUILD_ROOT/build_venv"
+if [ ! -f "$BUILD_ROOT/build_venv/bin/activate" ]; then
+  uv venv --python "$PYTHON_VERSION" "$BUILD_ROOT/build_venv"
+fi
 source "$BUILD_ROOT/build_venv/bin/activate"
 
 # setuptools isn't preinstalled in a `uv venv` (unlike `python -m venv`, which
@@ -135,7 +137,13 @@ if [ ! -d "$BUILD_ROOT/eigen" ]; then
   git -C "$BUILD_ROOT/eigen" checkout "$EIGEN_COMMIT"
 fi
 
-echo "=== building (this takes a long time) ==="
+# os.cpu_count() (what --parallel with no count relies on) sees the whole
+# node's CPUs under SLURM, not the cgroup-limited --cpus-per-task allocation --
+# oversubscribing job count vs. reserved CPUs badly thrashes the build. Pin it
+# to what SLURM actually gave us, falling back to nproc outside SLURM.
+BUILD_PARALLEL_JOBS="${SLURM_CPUS_PER_TASK:-$(nproc)}"
+
+echo "=== building (this takes a long time; parallel=$BUILD_PARALLEL_JOBS) ==="
 ./build.sh \
   --config RelWithDebInfo \
   --enable_training \
@@ -145,7 +153,7 @@ echo "=== building (this takes a long time) ==="
   --cudnn_home "$CUDNN_HOME" \
   --cuda_version="$CUDA_VERSION" \
   --skip_tests \
-  --parallel \
+  --parallel "$BUILD_PARALLEL_JOBS" \
   --use_preinstalled_eigen \
   --eigen_path "$BUILD_ROOT/eigen" \
   --compile_no_warning_as_error \
