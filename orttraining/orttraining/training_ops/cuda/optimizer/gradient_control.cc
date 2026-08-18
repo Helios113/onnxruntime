@@ -108,6 +108,9 @@ Status InPlaceAccumulator<T, T_GRAD>::ComputeInternal(OpKernelContext* ctx) cons
 
 REGISTER_IN_PLACE_TENSOR_ACCUMULATORV2_TYPED(float, float)
 REGISTER_IN_PLACE_TENSOR_ACCUMULATORV2_TYPED(float, MLFloat16)
+REGISTER_IN_PLACE_TENSOR_ACCUMULATORV2_TYPED(float, BFloat16)
+REGISTER_IN_PLACE_TENSOR_ACCUMULATORV2_TYPED(BFloat16, BFloat16)
+REGISTER_IN_PLACE_TENSOR_ACCUMULATORV2_TYPED(BFloat16, float)
 
 template <typename T, typename T_GRAD>
 Status InPlaceAccumulatorV2<T, T_GRAD>::ComputeInternal(OpKernelContext* ctx) const {
