@@ -2180,7 +2180,7 @@ Example 4:
       .Output(0, "reduced", "Reduced output tensor.", "T")
       .TypeConstraint(
           "T",
-          OpSchema::numeric_types_for_math_reduction(),
+          OpSchema::numeric_types_for_math_reduction_ir4(),
           "Constrain input and output types to high-precision numeric tensors.")
       .TypeAndShapeInferenceFunction([](ONNX_NAMESPACE::InferenceContext& ctx) {
         propagateElemTypeFromInputToOutput(ctx, 0, 0);

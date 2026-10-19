@@ -396,6 +396,25 @@ AllocatorPtr GetRocmAllocator(OrtDevice::DeviceId id) {
 
 #endif
 
+// ml_dtypes (the same package onnx's own numpy_helper relies on for bfloat16) registers
+// its "bfloat16" dtype with numpy at import time under a type-number numpy hands out
+// dynamically -- unlike NPY_FLOAT16 and friends, it isn't a fixed enum value, so it can't
+// be a compile-time map key. Resolve it once, lazily, via Python; if ml_dtypes isn't
+// importable, bfloat16 numpy arrays simply stay unsupported, same as before this existed.
+int MlDtypesBfloat16NpyType() {
+  static const int npy_type = []() -> int {
+    try {
+      py::gil_scoped_acquire acquire;
+      py::object np_dtype = py::module_::import("numpy").attr("dtype");
+      py::object bfloat16 = py::module_::import("ml_dtypes").attr("bfloat16");
+      return np_dtype(bfloat16).attr("num").cast<int>();
+    } catch (const py::error_already_set&) {
+      return -1;
+    }
+  }();
+  return npy_type;
+}
+
 int OnnxRuntimeTensorToNumpyType(const DataTypeImpl* tensor_type) {
   static std::map<MLDataType, int> type_map{
       {DataTypeImpl::GetType<bool>(), NPY_BOOL},
@@ -412,6 +431,14 @@ int OnnxRuntimeTensorToNumpyType(const DataTypeImpl* tensor_type) {
       {DataTypeImpl::GetType<uint64_t>(), NPY_ULONGLONG},
       {DataTypeImpl::GetType<std::string>(), NPY_OBJECT},
   };
+
+  if (tensor_type == DataTypeImpl::GetType<BFloat16>()) {
+    const int bfloat16_npy_type = MlDtypesBfloat16NpyType();
+    if (bfloat16_npy_type >= 0) {
+      return bfloat16_npy_type;
+    }
+    throw std::runtime_error("No corresponding Numpy type for Tensor Type: ml_dtypes is not importable.");
+  }
 
   const auto it = type_map.find(tensor_type);
   if (it == type_map.end()) {
@@ -459,12 +486,17 @@ MLDataType NumpyTypeToOnnxRuntimeTensorType(int numpy_type) {
       {NPY_VOID, DataTypeImpl::GetType<std::string>()}};
 
   const auto it = type_map.find(numpy_type);
-  if (it == type_map.end()) {
-    throw std::runtime_error("Numpy_type " + std::to_string(numpy_type) +
-                             " can't be converted to MLDataType.");
-  } else {
+  if (it != type_map.end()) {
     return it->second;
   }
+
+  const int bfloat16_npy_type = MlDtypesBfloat16NpyType();
+  if (bfloat16_npy_type >= 0 && numpy_type == bfloat16_npy_type) {
+    return DataTypeImpl::GetType<BFloat16>();
+  }
+
+  throw std::runtime_error("Numpy_type " + std::to_string(numpy_type) +
+                           " can't be converted to MLDataType.");
 }
 
 MLDataType OnnxTypeToOnnxRuntimeTensorType(int onnx_element_type) {
