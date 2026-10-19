@@ -10,7 +10,7 @@
 set -euo pipefail
 
 # Single build script for the onnxruntime-training wheel (py3.11 + CUDA 12.8, targeting
-# RTX 4090/H100/RTX 5090). Submit with: sbatch training_builds/submit_build.sbatch
+# A40/A6000/RTX 4090/H100/RTX 5090). Submit with: sbatch training_builds/submit_build.sbatch
 #
 # BUILD_ROOT is fixed and on nfs-share (visible from every node, unlike $HOME which is
 # node-local here) so that ort_build/build_venv/eigen/uv_python all persist across
@@ -80,17 +80,13 @@ echo "=== nvcc check ==="
 $CUDACXX --version
 
 # ---------------------------------------------------------------------------
-# GPU compute capability discovery -> CMAKE_CUDA_ARCHITECTURES
+# Fat build: one wheel covering every GPU in the fleet, regardless of what (if
+# anything) the build node has. 86 = A40/A6000/RTX 30-series, 89 = RTX 4090,
+# 90 = H100, 120 = RTX 5090 (sm_120 needs nvcc >= 12.8, hence CUDA 12.8 above).
+# Built with 12.8, it should run on 12.x runtimes/drivers via CUDA minor-version
+# compatibility -- smoke-test on the oldest node (mauao, CUDA 12.6) after building.
 # ---------------------------------------------------------------------------
-if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi --query-gpu=compute_cap --format=csv,noheader >/dev/null 2>&1; then
-  CMAKE_CUDA_ARCHITECTURES="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader \
-    | tr -d ' .' | sort -u | paste -sd ';')"
-fi
-if [ -z "${CMAKE_CUDA_ARCHITECTURES:-}" ]; then
-  echo "WARNING: no GPU visible on this build host (nvidia-smi missing or empty)." >&2
-  echo "Falling back to the target fleet's arch list (89;90;120 = RTX 4090/H100/RTX 5090)." >&2
-  CMAKE_CUDA_ARCHITECTURES="89;90;120"
-fi
+CMAKE_CUDA_ARCHITECTURES="86;89;90;120"
 echo "CMAKE_CUDA_ARCHITECTURES=$CMAKE_CUDA_ARCHITECTURES"
 
 echo "=== setting up build venv (Python $PYTHON_VERSION) ==="
