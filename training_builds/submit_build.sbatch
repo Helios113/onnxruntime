@@ -131,6 +131,10 @@ if [ ! -d "$BUILD_ROOT/eigen" ]; then
   git -C "$BUILD_ROOT/eigen" checkout "$EIGEN_COMMIT"
 fi
 
+# Eigen: ORT >=1.21 dropped the --use_preinstalled_eigen branch from cmake/external/eigen.cmake and
+# always FetchContent-downloads the gitlab archive, whose zip checksum is not stable (SHA1 mismatch
+# -> configure fails). FETCHCONTENT_SOURCE_DIR_EIGEN points FetchContent at our pinned clone instead.
+
 # os.cpu_count() (what --parallel with no count relies on) sees the whole
 # node's CPUs under SLURM, not the cgroup-limited --cpus-per-task allocation --
 # oversubscribing job count vs. reserved CPUs badly thrashes the build. Pin it
@@ -148,10 +152,8 @@ echo "=== building (parallel=$BUILD_PARALLEL_JOBS; reusing $BUILD_ROOT/ort_build
   --cuda_version="$CUDA_VERSION" \
   --skip_tests \
   --parallel "$BUILD_PARALLEL_JOBS" \
-  --use_preinstalled_eigen \
-  --eigen_path "$BUILD_ROOT/eigen" \
   --compile_no_warning_as_error \
-  --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES="$CMAKE_CUDA_ARCHITECTURES" "CMAKE_CUDA_FLAGS=-static-global-template-stub=false" onnxruntime_BUILD_UNIT_TESTS=OFF \
+  --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES="$CMAKE_CUDA_ARCHITECTURES" "CMAKE_CUDA_FLAGS=-static-global-template-stub=false" onnxruntime_BUILD_UNIT_TESTS=OFF "FETCHCONTENT_SOURCE_DIR_EIGEN=$BUILD_ROOT/eigen" \
   --build_dir "$BUILD_ROOT/ort_build"
 
 echo "=== build finished, wheel(s): ==="
