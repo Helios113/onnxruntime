@@ -19,7 +19,10 @@ set -euo pipefail
 # worktree-relative path: CMakeCache.txt bakes in absolute paths, so reusing ort_build
 # from a different BUILD_ROOT than it was configured with hard-fails the configure step.
 ORT_SRC="/nfs-share/pa511/code_bases/onnxruntime"
-BUILD_ROOT="/nfs-share/pa511/code_bases/onnxruntime_build_output/1.20.0_py311_cuda12"
+ORT_VERSION="$(cat "$ORT_SRC/VERSION_NUMBER" 2>/dev/null || git -C "$ORT_SRC" describe --tags --always)"
+# BUILD_ROOT is keyed on the ORT version so a new version never reuses (and reconfigures/overwrites)
+# an older version's ort_build, which holds its wheel under ort_build/RelWithDebInfo/dist/.
+BUILD_ROOT="/nfs-share/pa511/code_bases/onnxruntime_build_output/${ORT_VERSION}_py311_cuda12"
 PYTHON_VERSION="3.11"
 CUDA_HOME="/usr/local/cuda-12.8"
 CUDNN_PIP_SPEC="nvidia-cudnn-cu12==9.2.1.18"  # pinned for compatibility with this ORT/CUDA combo, not auto-detected
@@ -28,7 +31,6 @@ if [ ! -f "$ORT_SRC/cmake/deps.txt" ]; then
   echo "ERROR: ORT_SRC ($ORT_SRC) doesn't look like an onnxruntime checkout (no cmake/deps.txt)." >&2
   exit 1
 fi
-ORT_VERSION="$(cat "$ORT_SRC/VERSION_NUMBER" 2>/dev/null || git -C "$ORT_SRC" describe --tags --always)"
 
 mkdir -p "$BUILD_ROOT"
 cd "$BUILD_ROOT"
