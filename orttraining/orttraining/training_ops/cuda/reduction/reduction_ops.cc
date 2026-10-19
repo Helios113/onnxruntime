@@ -29,6 +29,7 @@ REGISTER_MS_KERNEL_TYPED(ReduceSumTraining, MLFloat16)
 REGISTER_MS_KERNEL_TYPED(ReduceSumTraining, float)
 REGISTER_MS_KERNEL_TYPED(ReduceSumTraining, double)
 REGISTER_MS_KERNEL_TYPED(ReduceSumTraining, int32_t)
+REGISTER_MS_KERNEL_TYPED(ReduceSumTraining, BFloat16)
 
 template <bool allow_multi_axes>
 template <typename T, cudnnReduceTensorIndices_t ReduceTensorIndices>

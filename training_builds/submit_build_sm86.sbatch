@@ -1,45 +1,44 @@
 #!/bin/bash
+#SBATCH --job-name=ort_build_sm86
+#SBATCH --partition=ampere
+#SBATCH --nodelist=mauao
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=64G
+#SBATCH --time=03:00:00
+#SBATCH --output=/nfs-share/pa511/code_bases/onnxruntime/training_builds/logs/build_%j.log
+
 set -euo pipefail
 
-# ---------------------------------------------------------------------------
-# Site-specific configuration. These are NOT auto-discoverable -- they encode
-# where you keep source trees and shared storage, not hardware facts. Set
-# via environment variables when invoking the script, e.g.:
-#   ORT_SRC=/path/to/onnxruntime BUILD_ROOT=/nfs-share/me/ort_out ./build_ort.sh
+# sm_86-only build of the onnxruntime-training wheel (py3.11 + CUDA 12.6), for
+# A40/A6000/RTX 30-series (compute capability 8.6). Runs on mauao (ampere
+# partition), the only node in this cluster with sm_86 GPUs -- that node caps
+# out at CUDA 12.6 (no 12.8), hence the different CUDA_HOME/wheel cu-tag than
+# submit_build.sbatch. Submit with:
+#   sbatch training_builds/submit_build_sm86.sbatch
 #
-# BUILD_ROOT must be on shared/network storage if you run this via a job
-# scheduler across multiple nodes -- the staged setup.py + compiled .so tree
-# needs to be visible from any node for editable installs, not just the node
-# that ran the build.
-# ---------------------------------------------------------------------------
-ORT_SRC="${ORT_SRC:-$(pwd)}"
+# Uses its own BUILD_ROOT (distinct from submit_build.sbatch's) so this never
+# touches the 89;90;120 build's ort_build/CMakeCache or its output wheel --
+# the two builds are fully isolated from each other. See submit_build.sbatch
+# for the BUILD_ROOT/CMakeCache absolute-path caveat this mirrors.
+ORT_SRC="/nfs-share/pa511/code_bases/onnxruntime"
+BUILD_ROOT="/nfs-share/pa511/code_bases/onnxruntime_build_output/1.20.0_py311_cuda12_sm86"
+PYTHON_VERSION="3.11"
+CUDA_HOME="/usr/local/cuda-12.6"  # mauao (ampere partition) tops out at 12.6, unlike ruapehu's 12.8
+CUDNN_PIP_SPEC="nvidia-cudnn-cu12==9.2.1.18"  # pinned for compatibility with this ORT/CUDA combo, not auto-detected
+CMAKE_CUDA_ARCHITECTURES="86"  # forced, regardless of what nvidia-smi sees on the build node
+
 if [ ! -f "$ORT_SRC/cmake/deps.txt" ]; then
   echo "ERROR: ORT_SRC ($ORT_SRC) doesn't look like an onnxruntime checkout (no cmake/deps.txt)." >&2
-  echo "Set ORT_SRC=/path/to/onnxruntime or cd into it before running." >&2
   exit 1
 fi
-
 ORT_VERSION="$(cat "$ORT_SRC/VERSION_NUMBER" 2>/dev/null || git -C "$ORT_SRC" describe --tags --always)"
-PYTHON_VERSION="${PYTHON_VERSION:-3.11}"
-CUDNN_PIP_SPEC="${CUDNN_PIP_SPEC:-nvidia-cudnn-cu12==9.2.1.18}"  # pinned for compatibility with this ORT/CUDA combo, not auto-detected
 
-BUILD_ROOT="${BUILD_ROOT:-$HOME/onnxruntime_build_output/$ORT_VERSION}"
 mkdir -p "$BUILD_ROOT"
 cd "$BUILD_ROOT"
 
-# ---------------------------------------------------------------------------
-# CUDA toolkit discovery
-# ---------------------------------------------------------------------------
-if [ -z "${CUDA_HOME:-}" ]; then
-  # Highest-versioned /usr/local/cuda-12.* install (ORT 1.20.0 predates CUDA 13 --
-  # its nvcc rejects GCC-style warning flags CMake's compiler feature-detection
-  # probes with, e.g. "-Wstrict-aliasing", breaking configure). Excluding cuda-13.*
-  # from auto-discovery avoids that; pass CUDA_HOME explicitly to override.
-  CUDA_HOME="$(find /usr/local -maxdepth 1 -name 'cuda-12.*' -type d 2>/dev/null | sort -V | tail -1)"
-  CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
-fi
 if [ ! -x "$CUDA_HOME/bin/nvcc" ]; then
-  echo "ERROR: no nvcc at $CUDA_HOME/bin/nvcc. Set CUDA_HOME explicitly." >&2
+  echo "ERROR: no nvcc at $CUDA_HOME/bin/nvcc." >&2
   exit 1
 fi
 export CUDA_HOME
@@ -82,22 +81,7 @@ unset LIBRARY_PATH
 echo "=== nvcc check ==="
 $CUDACXX --version
 
-# ---------------------------------------------------------------------------
-# GPU compute capability discovery -> CMAKE_CUDA_ARCHITECTURES
-# ---------------------------------------------------------------------------
-if [ -z "${CMAKE_CUDA_ARCHITECTURES:-}" ]; then
-  if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi --query-gpu=compute_cap --format=csv,noheader >/dev/null 2>&1; then
-    CMAKE_CUDA_ARCHITECTURES="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader \
-      | tr -d ' .' | sort -u | paste -sd ';')"
-  fi
-  if [ -z "${CMAKE_CUDA_ARCHITECTURES:-}" ]; then
-    echo "WARNING: no GPU visible on this build host (nvidia-smi missing or empty)." >&2
-    echo "Falling back to the target fleet's arch list (89;90;120 = RTX 4090/H100/RTX 5090)." >&2
-    echo "Set CMAKE_CUDA_ARCHITECTURES explicitly for a different/narrower target." >&2
-    CMAKE_CUDA_ARCHITECTURES="89;90;120"
-  fi
-fi
-echo "CMAKE_CUDA_ARCHITECTURES=$CMAKE_CUDA_ARCHITECTURES"
+echo "CMAKE_CUDA_ARCHITECTURES=$CMAKE_CUDA_ARCHITECTURES (forced, sm_86 only)"
 
 echo "=== setting up build venv (Python $PYTHON_VERSION) ==="
 export UV_PYTHON_INSTALL_DIR="$BUILD_ROOT/uv_python"
@@ -143,7 +127,11 @@ fi
 # to what SLURM actually gave us, falling back to nproc outside SLURM.
 BUILD_PARALLEL_JOBS="${SLURM_CPUS_PER_TASK:-$(nproc)}"
 
-echo "=== building (this takes a long time; parallel=$BUILD_PARALLEL_JOBS) ==="
+echo "=== building (parallel=$BUILD_PARALLEL_JOBS; reusing $BUILD_ROOT/ort_build if present) ==="
+# Unlike submit_build.sbatch, no -static-global-template-stub=false in
+# CMAKE_CUDA_FLAGS here: that flag was added there for nvcc 12.8 and doesn't
+# exist in nvcc 12.6 (this node's toolchain) -- passing it breaks CMake's
+# CUDA compiler ABI-detection step outright.
 ./build.sh \
   --config RelWithDebInfo \
   --enable_training \
@@ -157,7 +145,7 @@ echo "=== building (this takes a long time; parallel=$BUILD_PARALLEL_JOBS) ==="
   --use_preinstalled_eigen \
   --eigen_path "$BUILD_ROOT/eigen" \
   --compile_no_warning_as_error \
-  --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES="$CMAKE_CUDA_ARCHITECTURES" "CMAKE_CUDA_FLAGS=-static-global-template-stub=false" \
+  --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES="$CMAKE_CUDA_ARCHITECTURES" onnxruntime_BUILD_UNIT_TESTS=OFF \
   --build_dir "$BUILD_ROOT/ort_build"
 
 echo "=== build finished, wheel(s): ==="
