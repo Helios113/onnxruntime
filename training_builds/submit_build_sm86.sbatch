@@ -3,7 +3,7 @@
 #SBATCH --partition=ampere
 #SBATCH --nodelist=mauao
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=10  # cluster caps GPU jobs at 10 CPUs
 #SBATCH --mem=64G
 #SBATCH --time=03:00:00
 #SBATCH --output=/nfs-share/pa511/code_bases/onnxruntime/training_builds/logs/build_%j.log
