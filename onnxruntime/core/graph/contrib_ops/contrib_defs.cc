@@ -2179,6 +2179,239 @@ ONNX_MS_OPERATOR_SET_SCHEMA(FusedMatMul, 1,
                                 .SetDoc(FusedMatMul_doc)
                                 .TypeAndShapeInferenceFunction([](ONNX_NAMESPACE::InferenceContext& ctx) { FusedMatMulShapeInference(ctx); }));
 
+// Helpers for the *WithError ops: output 0 (Y) is the stock op's output, output 1 (E) is its rounding error, with
+// Y's shape and type double for double inputs, float otherwise.
+static void PropagateErrorOutput(ONNX_NAMESPACE::InferenceContext& ctx) {
+  const auto elem_type = ctx.getInputType(0)->tensor_type().elem_type();
+  updateOutputElemType(ctx, 1,
+                       elem_type == ONNX_NAMESPACE::TensorProto::DOUBLE
+                           ? ONNX_NAMESPACE::TensorProto::DOUBLE
+                           : ONNX_NAMESPACE::TensorProto::FLOAT);
+  const auto* y_type = ctx.getOutputType(0);
+  // E, and the optional compensated result R (MatMulWithError only), have Y's shape.
+  for (size_t out = 1; out < ctx.getNumOutputs(); ++out) {
+    if (out == 2) {
+      updateOutputElemType(ctx, 2, ctx.getOutputType(1)->tensor_type().elem_type());
+    }
+    if (y_type != nullptr && y_type->tensor_type().has_shape()) {
+      *ctx.getOutputType(out)->mutable_tensor_type()->mutable_shape() = y_type->tensor_type().shape();
+    }
+  }
+}
+
+// Run the type/shape inference of a stock ONNX op on output 0.
+static void InferLikeStockOp(ONNX_NAMESPACE::InferenceContext& ctx, const char* op_type, int version) {
+  const auto* stock = ONNX_NAMESPACE::OpSchemaRegistry::Schema(op_type, version, "");
+  ORT_ENFORCE(stock != nullptr && stock->has_type_and_shape_inference_function(), "No inference function for ", op_type);
+  stock->GetTypeAndShapeInferenceFunction()(ctx);
+}
+
+constexpr const char* MatMulWithError_doc = R"DOC(
+Matrix product that behaves like numpy.matmul (https://docs.scipy.org/doc/numpy-1.13.0/reference/generated/numpy.matmul.html),
+also returning the rounding error of the result. Y is the regular MatMul result. For each output element,
+E = (s - Y) + c, where (s, c) is the compensated Dot2 dot product (Ogita-Rump-Oishi) accumulated with k = 0..K-1 in order,
+so that the exact product is approximately Y + E. If Y is not finite (e.g. an fp16 overflow), E is NaN.
+Available on the CUDA execution provider (float, double, float16, bfloat16) and the CPU execution provider (float, double).
+)DOC";
+
+ONNX_MS_OPERATOR_SET_SCHEMA(MatMulWithError, 1,
+                            OpSchema()
+                                .Input(0, "A", "N-dimensional matrix A", "T")
+                                .Input(1, "B", "N-dimensional matrix B", "T")
+                                .Attr("transA", "Whether A should be transposed on the last two dimensions before doing multiplication",
+                                      AttributeProto::INT, static_cast<int64_t>(0))
+                                .Attr("transB", "Whether B should be transposed on the last two dimensions before doing multiplication",
+                                      AttributeProto::INT, static_cast<int64_t>(0))
+                                .Output(0, "Y", "Matrix multiply results", "T")
+                                .Output(1, "E", "Rounding error of Y: exact(A @ B) is approximately Y + E. Same shape as Y.", "E")
+                                .Output(2, "R", "Optional compensated product s + c (rounded once). Same shape as Y, type of E.", "E",
+                                        OpSchema::Optional)
+                                .TypeConstraint("T", {"tensor(float16)", "tensor(float)", "tensor(double)", "tensor(bfloat16)"},
+                                                "Constrain input and output Y types to float tensors.")
+                                .TypeConstraint("E", {"tensor(float)", "tensor(double)"},
+                                                "Constrain error output type: double for double inputs, float otherwise.")
+                                .SetDoc(MatMulWithError_doc)
+                                .TypeAndShapeInferenceFunction([](ONNX_NAMESPACE::InferenceContext& ctx) {
+                                  FusedMatMulShapeInference(ctx);
+                                  PropagateErrorOutput(ctx);
+                                }));
+
+constexpr const char* GemmWithError_doc = R"DOC(
+General matrix multiplication Y = alpha * A' * B' + beta * C as in the ONNX Gemm operator, also returning the rounding error
+of Y. Y is the regular Gemm result. E is computed from a compensated evaluation of alpha * (A' * B') + beta * C (Dot2 over k
+in order 0..K-1, TwoProd for the alpha and beta scalings, TwoSum for the final addition) minus Y, so that the exact result is
+approximately Y + E. If Y is not finite, E is NaN.
+Available on the CUDA and CPU execution providers (float, double, float16, bfloat16).
+)DOC";
+
+ONNX_MS_OPERATOR_SET_SCHEMA(GemmWithError, 1,
+                            OpSchema()
+                                .Input(0, "A", "Input tensor A. The shape of A should be (M, K) if transA is 0, or (K, M) if transA is non-zero.", "T")
+                                .Input(1, "B", "Input tensor B. The shape of B should be (K, N) if transB is 0, or (N, K) if transB is non-zero.", "T")
+                                .Input(2, "C", "Optional input tensor C, unidirectionally broadcastable to (M, N).", "T", OpSchema::Optional)
+                                .Attr("transA", "Whether A should be transposed", AttributeProto::INT, static_cast<int64_t>(0))
+                                .Attr("transB", "Whether B should be transposed", AttributeProto::INT, static_cast<int64_t>(0))
+                                .Attr("alpha", "Scalar multiplier for the product of input tensors A * B.", AttributeProto::FLOAT, 1.0f)
+                                .Attr("beta", "Scalar multiplier for input tensor C.", AttributeProto::FLOAT, 1.0f)
+                                .Output(0, "Y", "Output tensor of shape (M, N).", "T")
+                                .Output(1, "E", "Rounding error of Y: the exact result is approximately Y + E. Shape (M, N).", "E")
+                                .TypeConstraint("T", {"tensor(float16)", "tensor(float)", "tensor(double)", "tensor(bfloat16)"},
+                                                "Constrain input and output Y types to float tensors.")
+                                .TypeConstraint("E", {"tensor(float)", "tensor(double)"},
+                                                "Constrain error output type: double for double inputs, float otherwise.")
+                                .SetDoc(GemmWithError_doc)
+                                .TypeAndShapeInferenceFunction([](ONNX_NAMESPACE::InferenceContext& ctx) {
+                                  InferLikeStockOp(ctx, "Gemm", 13);
+                                  PropagateErrorOutput(ctx);
+                                }));
+
+constexpr const char* ReduceSumWithError_doc = R"DOC(
+Computes the sum of the input tensor's elements along the provided axes as in the ONNX ReduceSum operator, also returning
+the rounding error of the result. Y is the regular ReduceSum result. E = (s - Y) + c, where (s, c) is a compensated
+(TwoSum) sum of the reduced elements in row-major order of the reduced axes, so that the exact sum is approximately Y + E.
+If Y is not finite, E is NaN.
+Available on the CUDA and CPU execution providers (float, double, float16, bfloat16).
+)DOC";
+
+ONNX_MS_OPERATOR_SET_SCHEMA(ReduceSumWithError, 1,
+                            OpSchema()
+                                .Input(0, "data", "An input tensor.", "T")
+                                .Input(1, "axes",
+                                       "Optional input list of integers, along which to reduce. If empty (or absent), all axes are reduced, "
+                                       "unless noop_with_empty_axes is true, in which case the input is returned unchanged.",
+                                       "tensor(int64)", OpSchema::Optional)
+                                .Attr("keepdims", "Keep the reduced dimension or not, default 1 means keep the reduced dimension.",
+                                      AttributeProto::INT, static_cast<int64_t>(1))
+                                .Attr("noop_with_empty_axes",
+                                      "Defines behavior if 'axes' is empty. Default behavior with 'false' is to reduce all axes.",
+                                      AttributeProto::INT, static_cast<int64_t>(0))
+                                .Output(0, "Y", "Reduced output tensor.", "T")
+                                .Output(1, "E", "Rounding error of Y: the exact sum is approximately Y + E. Same shape as Y.", "E")
+                                .TypeConstraint("T", {"tensor(float16)", "tensor(float)", "tensor(double)", "tensor(bfloat16)"},
+                                                "Constrain input and output Y types to float tensors.")
+                                .TypeConstraint("E", {"tensor(float)", "tensor(double)"},
+                                                "Constrain error output type: double for double inputs, float otherwise.")
+                                .SetDoc(ReduceSumWithError_doc)
+                                .TypeAndShapeInferenceFunction([](ONNX_NAMESPACE::InferenceContext& ctx) {
+                                  InferLikeStockOp(ctx, "ReduceSum", 13);
+                                  PropagateErrorOutput(ctx);
+                                }));
+
+// Elementwise *WithError ops: output 0 (C) is the correctly rounded result of the op, output 1 (E) its rounding error.
+static void BinaryWithErrorInference(ONNX_NAMESPACE::InferenceContext& ctx) {
+  ONNX_NAMESPACE::propagateElemTypeFromInputToOutput(ctx, 0, 0);
+  if (hasNInputShapes(ctx, 2)) {
+    ONNX_NAMESPACE::bidirectionalBroadcastShapeInference(
+        ctx.getInputType(0)->tensor_type().shape(),
+        ctx.getInputType(1)->tensor_type().shape(),
+        *ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape());
+  }
+  PropagateErrorOutput(ctx);
+}
+
+#define ELEMENTWISE_WITH_ERROR_BINARY_SCHEMA(Name, doc_text)                                                           \
+  ONNX_MS_OPERATOR_SET_SCHEMA(Name##WithError, 1,                                                                      \
+                              OpSchema()                                                                               \
+                                  .Input(0, "A", "First operand.", "T")                                                \
+                                  .Input(1, "B", "Second operand (numpy-style broadcasting with A).", "T")             \
+                                  .Output(0, "C", "Result, as the stock operator would produce it.", "T")              \
+                                  .Output(1, "E", "Rounding error of C: the exact result is approximately C + E. "     \
+                                                  "Same shape as C.",                                                  \
+                                          "E")                                                                         \
+                                  .TypeConstraint("T", {"tensor(float16)", "tensor(float)", "tensor(double)",          \
+                                                        "tensor(bfloat16)"},                                           \
+                                                  "Constrain input and output C types to float tensors.")              \
+                                  .TypeConstraint("E", {"tensor(float)", "tensor(double)"},                            \
+                                                  "Constrain error output type: double for double inputs, float "      \
+                                                  "otherwise.")                                                        \
+                                  .SetDoc(doc_text)                                                                    \
+                                  .TypeAndShapeInferenceFunction(BinaryWithErrorInference));
+
+ELEMENTWISE_WITH_ERROR_BINARY_SCHEMA(Add, R"DOC(
+Elementwise A + B (numpy broadcasting), also returning the rounding error of the result. E = (r - C) + err where
+(r, err) is the exact TwoSum of the operands in the accumulation type (double for double inputs, float otherwise), so
+that A + B is approximately C + E. If C is not finite, E is NaN. Available on the CUDA and CPU execution providers
+(float, double, float16, bfloat16).
+)DOC")
+
+ELEMENTWISE_WITH_ERROR_BINARY_SCHEMA(Sub, R"DOC(
+Elementwise A - B (numpy broadcasting), also returning the rounding error of the result. E = (r - C) + err where
+(r, err) is the exact TwoSum of A and -B in the accumulation type (double for double inputs, float otherwise), so that
+A - B is approximately C + E. If C is not finite, E is NaN. Available on the CUDA and CPU execution providers
+(float, double, float16, bfloat16).
+)DOC")
+
+ELEMENTWISE_WITH_ERROR_BINARY_SCHEMA(Mul, R"DOC(
+Elementwise A * B (numpy broadcasting), also returning the rounding error of the result. E = (r - C) + fma(A, B, -r)
+with r = A * B rounded in the accumulation type (double for double inputs, float otherwise), so that A * B is
+approximately C + E. If C is not finite, E is NaN. Available on the CUDA and CPU execution providers
+(float, double, float16, bfloat16).
+)DOC")
+
+ELEMENTWISE_WITH_ERROR_BINARY_SCHEMA(Div, R"DOC(
+Elementwise A / B (numpy broadcasting), also returning the rounding error of the result. E = (r - C) + fma(-r, B, A) / B
+with r = A / B rounded in the accumulation type (double for double inputs, float otherwise), so that A / B is
+approximately C + E. If C is not finite (e.g. division by zero), E is NaN. Available on the CUDA and CPU execution
+providers (float, double, float16, bfloat16).
+)DOC")
+
+constexpr const char* SqrtWithError_doc = R"DOC(
+Elementwise square root, also returning the rounding error of the result. E = (r - Y) + fma(-r, r, X) / (2 r) with
+r = sqrt(X) rounded in the accumulation type (double for double inputs, float otherwise), so that sqrt(X) is
+approximately Y + E. If Y is not finite (e.g. X < 0), E is NaN. Available on the CUDA and CPU execution providers
+(float, double, float16, bfloat16).
+)DOC";
+
+ONNX_MS_OPERATOR_SET_SCHEMA(SqrtWithError, 1,
+                            OpSchema()
+                                .Input(0, "X", "Input tensor.", "T")
+                                .Output(0, "Y", "Square root of X, as the stock operator would produce it.", "T")
+                                .Output(1, "E", "Rounding error of Y: sqrt(X) is approximately Y + E. Same shape as Y.", "E")
+                                .TypeConstraint("T", {"tensor(float16)", "tensor(float)", "tensor(double)", "tensor(bfloat16)"},
+                                                "Constrain input and output Y types to float tensors.")
+                                .TypeConstraint("E", {"tensor(float)", "tensor(double)"},
+                                                "Constrain error output type: double for double inputs, float otherwise.")
+                                .SetDoc(SqrtWithError_doc)
+                                .TypeAndShapeInferenceFunction([](ONNX_NAMESPACE::InferenceContext& ctx) {
+                                  ONNX_NAMESPACE::propagateShapeAndTypeFromFirstInput(ctx);
+                                  PropagateErrorOutput(ctx);
+                                }));
+
+constexpr const char* SoftmaxWithError_doc = R"DOC(
+Softmax along `axis`, Y_i = exp(x_i - m) / s with m = max(x) and s = sum_j exp(x_j - m), also returning the error
+propagated through that chain: softmax computed with exact arithmetic on the same x is approximately Y + E, where only
+the rounding errors of the subtraction x_i - m, the sum s and the division are tracked, each by an error-free
+transformation (TwoSum, TwoSum with compensated accumulation, fma remainder), and the subtraction error is carried
+through exp to first order (d exp(t) = exp(t) dt). The rounding error of exp itself is not modelled: the computed
+exp(x_i - m) is taken as exact. The max involves no rounding. Everything is computed in the accumulation type (double
+for double inputs, float otherwise); for float16 / bfloat16, E also contains the rounding of the final conversion. Y is
+computed by this operator, so it can differ from the stock Softmax by the accuracy of exp. If Y is not finite, E and B
+are NaN.
+
+B bounds what E leaves out, mainly the rounding error of exp: |softmax - (Y + E)| <= B, to first order. It assumes exp
+has a relative error of at most rho (2 ulp on CUDA for float, 1 ulp otherwise: 2^-22 / 2^-23 for float, 2^-52 for
+double; the documented figures, not measured) and takes B = 2 rho y + 4 rho |E|: rho y from exp(x_i - max) in the
+numerator, rho y from the sum in the denominator, and a term for the second-order effects in E.
+Available on the CUDA and CPU execution providers (float, double, float16, bfloat16).
+)DOC";
+
+ONNX_MS_OPERATOR_SET_SCHEMA(SoftmaxWithError, 1,
+                            OpSchema()
+                                .Attr("axis", "Axis along which softmax is computed (default -1).", AttributeProto::INT, static_cast<int64_t>(-1))
+                                .Input(0, "X", "Input tensor.", "T")
+                                .Output(0, "Y", "Softmax of X along axis.", "T")
+                                .Output(1, "E", "Error propagated through the softmax chain: exact softmax is approximately Y + E. Same shape as Y.", "E")
+                                .Output(2, "B", "Non-negative bound on |exact softmax - (Y + E)|, dominated by the rounding error of exp. Same shape as Y.", "E")
+                                .TypeConstraint("T", {"tensor(float16)", "tensor(float)", "tensor(double)", "tensor(bfloat16)"},
+                                                "Constrain input and output Y types to float tensors.")
+                                .TypeConstraint("E", {"tensor(float)", "tensor(double)"},
+                                                "Constrain error output type: double for double inputs, float otherwise.")
+                                .SetDoc(SoftmaxWithError_doc)
+                                .TypeAndShapeInferenceFunction([](ONNX_NAMESPACE::InferenceContext& ctx) {
+                                  ONNX_NAMESPACE::propagateShapeAndTypeFromFirstInput(ctx);
+                                  PropagateErrorOutput(ctx);
+                                }));
+
 ONNX_MS_OPERATOR_SET_SCHEMA(FusedMatMulActivation, 1,
                             OpSchema()
                                 .Input(0, "A", "N-dimensional matrix A", "T")

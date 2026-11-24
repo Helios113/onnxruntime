@@ -448,4 +448,7 @@ Status Gemm<float>::Compute(OpKernelContext* context) const {
   return Status::OK();
 }
 
+// Explicit instantiation: the contrib GemmWithError CPU kernel holds and calls a Gemm<double>.
+template class Gemm<double>;
+
 }  // namespace onnxruntime

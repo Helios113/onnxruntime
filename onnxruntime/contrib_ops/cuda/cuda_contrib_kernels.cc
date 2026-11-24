@@ -160,6 +160,42 @@ class CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16_int8_t, QAttention);
 class CUDA_MS_OP_TYPED_CLASS_NAME(1, float, FusedConv);
 class CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, TransposeMatMul);  // backward compatibility
 class CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, FusedMatMul);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, float, MatMulWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, double, MatMulWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, MatMulWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, MatMulWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, float, GemmWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, double, GemmWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, GemmWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, GemmWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, float, ReduceSumWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, double, ReduceSumWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, ReduceSumWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, ReduceSumWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, float, AddWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, double, AddWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, AddWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, AddWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, float, SubWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, double, SubWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, SubWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, SubWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, float, MulWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, double, MulWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, MulWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, MulWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, float, DivWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, double, DivWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, DivWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, DivWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, float, SqrtWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, double, SqrtWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, SqrtWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, SqrtWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, float, SoftmaxWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, double, SoftmaxWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, SoftmaxWithError);
+class CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, SoftmaxWithError);
 class CUDA_MS_OP_CLASS_NAME(1, QOrderedMatMul);
 class CUDA_MS_OP_CLASS_NAME(1, QOrderedLayerNormalization);
 class CUDA_MS_OP_CLASS_NAME(1, QOrderedGelu);
@@ -371,6 +407,42 @@ Status RegisterCudaContribKernels(KernelRegistry& kernel_registry) {
       // TransposedMatMul is still here for backward compatibility
       BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, TransposeMatMul)>,  // backward compatibility
       BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, FusedMatMul)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, float, MatMulWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, double, MatMulWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, MatMulWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, MatMulWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, float, GemmWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, double, GemmWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, GemmWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, GemmWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, float, ReduceSumWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, double, ReduceSumWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, ReduceSumWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, ReduceSumWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, float, AddWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, double, AddWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, AddWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, AddWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, float, SubWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, double, SubWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, SubWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, SubWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, float, MulWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, double, MulWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, MulWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, MulWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, float, DivWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, double, DivWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, DivWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, DivWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, float, SqrtWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, double, SqrtWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, SqrtWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, SqrtWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, float, SoftmaxWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, double, SoftmaxWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, MLFloat16, SoftmaxWithError)>,
+      BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, BFloat16, SoftmaxWithError)>,
       BuildKernelCreateInfo<CUDA_MS_OP_TYPED_CLASS_NAME(1, float, FusedConv)>,
       BuildKernelCreateInfo<CUDA_MS_OP_CLASS_NAME(1, QOrderedMatMul)>,
       BuildKernelCreateInfo<CUDA_MS_OP_CLASS_NAME(1, QOrderedLayerNormalization)>,

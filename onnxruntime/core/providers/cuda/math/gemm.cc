@@ -168,5 +168,11 @@ Status Gemm<T>::ComputeDefault(OpKernelContext* ctx, int M, int N, int K) const 
   return Status::OK();
 }
 
+// Explicit instantiations: GemmWithError (contrib) calls the stock kernel's ComputeInternal.
+template class Gemm<float>;
+template class Gemm<double>;
+template class Gemm<MLFloat16>;
+template class Gemm<BFloat16>;
+
 }  // namespace cuda
 }  // namespace onnxruntime

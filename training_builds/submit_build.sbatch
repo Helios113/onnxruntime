@@ -138,19 +138,43 @@ fi
 BUILD_PARALLEL_JOBS="${SLURM_CPUS_PER_TASK:-$(nproc)}"
 
 echo "=== building (parallel=$BUILD_PARALLEL_JOBS; reusing $BUILD_ROOT/ort_build if present) ==="
-./build.sh \
-  --config RelWithDebInfo \
-  --enable_training \
-  --build_wheel \
-  --use_cuda \
-  --cuda_home "$CUDA_HOME" \
-  --cudnn_home "$CUDNN_HOME" \
-  --cuda_version="$CUDA_VERSION" \
-  --skip_tests \
-  --parallel "$BUILD_PARALLEL_JOBS" \
-  --compile_no_warning_as_error \
-  --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES="$CMAKE_CUDA_ARCHITECTURES" "CMAKE_CUDA_FLAGS=-static-global-template-stub=false" onnxruntime_BUILD_UNIT_TESTS=OFF "FETCHCONTENT_SOURCE_DIR_EIGEN=$BUILD_ROOT/eigen" \
-  --build_dir "$BUILD_ROOT/ort_build"
+run_build() {
+  ./build.sh \
+    --config RelWithDebInfo \
+    --enable_training \
+    --build_wheel \
+    --use_cuda \
+    --cuda_home "$CUDA_HOME" \
+    --cudnn_home "$CUDNN_HOME" \
+    --cuda_version="$CUDA_VERSION" \
+    --skip_tests \
+    --parallel "$BUILD_PARALLEL_JOBS" \
+    --compile_no_warning_as_error \
+    --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES="$CMAKE_CUDA_ARCHITECTURES" "CMAKE_CUDA_FLAGS=-static-global-template-stub=false" onnxruntime_BUILD_UNIT_TESTS=OFF "FETCHCONTENT_SOURCE_DIR_EIGEN=$BUILD_ROOT/eigen" \
+    --build_dir "$BUILD_ROOT/ort_build"
+}
+
+run_build
+
+# Incremental-build fix: libs are staged into <build>/RelWithDebInfo/onnxruntime/capi/ by a CMake post-build
+# step that only fires when onnxruntime_pybind11_state relinks. A change confined to the CUDA provider
+# (e.g. a contrib kernel) relinks libonnxruntime_providers_cuda.so but leaves the staged copy -- and so the
+# wheel -- stale. Refresh the staged copies from the freshly linked libs, drop setuptools' cached build/lib,
+# and repackage (the second run is a ninja no-op plus bdist_wheel, no recompilation).
+CFG_DIR="$BUILD_ROOT/ort_build/RelWithDebInfo"
+CAPI_DIR="$CFG_DIR/onnxruntime/capi"
+synced=0
+for name in libonnxruntime_providers_cuda.so libonnxruntime_providers_shared.so onnxruntime_pybind11_state.so; do
+  if [ -f "$CFG_DIR/$name" ] && { [ ! -f "$CAPI_DIR/$name" ] || [ "$CFG_DIR/$name" -nt "$CAPI_DIR/$name" ]; }; then
+    echo "refreshing stale staged $name"
+    cp -p "$CFG_DIR/$name" "$CAPI_DIR/$name"
+    synced=1
+  fi
+done
+if [ "$synced" = 1 ]; then
+  rm -rf "$CFG_DIR/build/lib" "$CFG_DIR/dist"
+  run_build
+fi
 
 echo "=== build finished, wheel(s): ==="
 find "$BUILD_ROOT/ort_build" -name "*.whl"

@@ -295,4 +295,7 @@ Status MatMul<float>::Compute(OpKernelContext* ctx) const {
   return Status::OK();
 }
 
+// Explicit instantiation: the contrib MatMulWithError CPU kernel holds and calls a MatMul<double>.
+template class MatMul<double>;
+
 }  // namespace onnxruntime
